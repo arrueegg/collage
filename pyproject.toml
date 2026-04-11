@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "make-collages"
+version = "1.0.0"
+description = "Generate 2×2 photo collages from a folder of images"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+heic = ["pillow-heif>=0.13.0"]
+all  = ["make-collages[heic]"]
+
+[project.scripts]
+make-collages = "collage.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["collage*"]

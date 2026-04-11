@@ -1,0 +1,7 @@
+Pillow>=10.0.0
+
+[all]
+make-collages[heic]
+
+[heic]
+pillow-heif>=0.13.0

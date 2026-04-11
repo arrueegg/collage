@@ -1,0 +1,2 @@
+[console_scripts]
+make-collages = collage.cli:main

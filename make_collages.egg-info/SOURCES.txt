@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+collage/__init__.py
+collage/cli.py
+collage/core.py
+collage/exif.py
+collage/image.py
+collage/layout.py
+collage/utils.py
+make_collages.egg-info/PKG-INFO
+make_collages.egg-info/SOURCES.txt
+make_collages.egg-info/dependency_links.txt
+make_collages.egg-info/entry_points.txt
+make_collages.egg-info/requires.txt
+make_collages.egg-info/top_level.txt
