@@ -29,14 +29,12 @@ def collect_images(source: Path, recursive: bool) -> list[Path]:
     ]
 
 
-# ── Argument type parsers (used by argparse) ──────────────────────────────────
+# ── Argument type parsers (used by argparse and Gradio) ───────────────────────
 
 def parse_ratio(value: str) -> tuple[float, float]:
     """
     Parse an aspect ratio string such as '16:9', '4:3', or '8.9:13.4'.
     Returns (width_part, height_part) as floats.
-
-    Raises argparse.ArgumentTypeError on bad input.
     """
     parts = value.strip().split(":")
     if len(parts) != 2:
@@ -56,12 +54,38 @@ def parse_ratio(value: str) -> tuple[float, float]:
     return w, h
 
 
+def parse_layout(value: str) -> tuple[int, int]:
+    """
+    Parse a grid layout string such as '2x2', '3x2', or '1x3'.
+    Returns (cols, rows) as ints — width first, matching the WxH convention.
+
+    Examples:
+        '2x2' → 4 images per collage (2 columns, 2 rows)
+        '3x2' → 6 images per collage (3 columns, 2 rows)
+        '1x3' → 3 images per collage (1 column,  3 rows)
+    """
+    parts = value.lower().strip().split("x")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(
+            f"Invalid layout '{value}'. Expected COLSxROWS  (e.g. 2x2 or 3x2)."
+        )
+    try:
+        cols, rows = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid layout '{value}'. Both parts must be integers."
+        )
+    if cols < 1 or rows < 1:
+        raise argparse.ArgumentTypeError(
+            f"Layout cols and rows must be at least 1, got '{value}'."
+        )
+    return cols, rows
+
+
 def parse_color(value: str) -> tuple[int, int, int]:
     """
     Parse a colour from a hex string (#rrggbb / rrggbb) or comma-separated
     RGB values (255,255,255).
-
-    Raises argparse.ArgumentTypeError on bad input.
     """
     value = value.strip().lstrip("#")
     if "," in value:

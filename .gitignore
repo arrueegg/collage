@@ -1,4 +1,28 @@
+# Virtual environment
 env/
+
+# Input / output data (not part of the repo)
 images/
+images_test/
 collages/
+collages_*/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# macOS
+.DS_Store
+
+# Editor / IDE
 .claude/
+.vscode/
+.idea/
+
+# Gradio cache
+gradio_cached_examples/

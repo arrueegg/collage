@@ -5,9 +5,29 @@
 ![HEIC](https://img.shields.io/badge/HEIC%2FHEIF-supported-orange)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-A command-line tool that turns a folder of photos into 2×2 grid collages. Sorts images chronologically by EXIF capture time, groups them in batches of four, and outputs one high-quality JPEG per batch.
+A tool that turns a folder of photos into grid collages. Sorts images chronologically by EXIF capture time, groups them in batches, and outputs one high-quality JPEG per batch.
 
+Available as a **browser UI** (no terminal knowledge needed) or a **CLI** for scripting.
 Built for iPhone photo libraries — handles HEIC/HEIF natively, applies EXIF orientation automatically, and auto-rotates images to best fill each cell.
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/yourname/make_collages.git
+cd make_collages
+```
+
+**Mac — double-click to launch:**
+> Double-click `launch.command` in Finder.
+> On first run it sets up the environment and installs dependencies automatically, then opens the UI in your browser.
+
+**Any platform — terminal:**
+```bash
+make install   # create venv + install deps (once)
+make ui        # open browser UI
+```
 
 ---
 
@@ -27,8 +47,8 @@ photo_007.heic  ─┤
 photo_008.heic  ─┘
 ```
 
-**12 images → 3 collages. 20 images → 5 collages.**
-Leftover images (fewer than 4) are skipped by default, with a message.
+The grid is configurable — `2x2` (default), `3x2`, `1x3`, `3x3`, and more.
+Leftover images (fewer than one full batch) are skipped by default, with a message.
 
 ---
 
@@ -38,7 +58,7 @@ Leftover images (fewer than 4) are skipped by default, with a message.
 ◄──────────────── canvas_w ─────────────────►
 
 ▲  ┌──────────────────────────────────────┐
-│  │           border                     │
+│  │              border                  │
 │  │   ┌──────────────┬──────────────┐    │
 │  │   │              │              │    │
 c  │ b │    cell      │ gap  cell    │ b  │
@@ -49,14 +69,14 @@ a  │ e │              │              │ e  │
 s  │ r │    cell      │    cell      │ r  │
 _  │   │              │              │    │
 h  │   └──────────────┴──────────────┘    │
-│  │           border                     │
+│  │              border                  │
 ▼  └──────────────────────────────────────┘
 
-  cell_w = (canvas_w − 2×border − gap) / 2
-  cell_h = (canvas_h − 2×border − gap) / 2
+  cell_w = (canvas_w − 2×border − (cols−1)×gap) / cols
+  cell_h = (canvas_h − 2×border − (rows−1)×gap) / rows
 ```
 
-Default: `--gap 0 --border 0` → images are perfectly flush, no background visible.
+Default: `gap 0`, `border 0` → images are perfectly flush, no background visible.
 
 ---
 
@@ -79,6 +99,7 @@ Original image        fit (default)         cover
 
 ## Features
 
+- Configurable grid layout: `2x2`, `3x2`, `1x3`, `3x3`, and any other combination
 - Sorts by EXIF capture time (`DateTimeOriginal`) — falls back to filename
 - HEIC/HEIF support via `pillow-heif`
 - Specify output size as an **aspect ratio** (`8.9:13.4`, `16:9`, `1:1`) — no pixel maths needed
@@ -93,8 +114,11 @@ Original image        fit (default)         cover
 ## Project structure
 
 ```
-make_collages.py      ← thin entry point (run without installing)
-pyproject.toml        ← package config  (installs make-collages command)
+launch.command        ← double-click in Finder to launch UI (Mac)
+Makefile              ← make install / make ui / make run
+app.py                ← Gradio browser UI
+make_collages.py      ← thin CLI entry point (run without installing)
+pyproject.toml        ← package config
 requirements.txt      ← dependency list
 collage/
 ├── __init__.py
@@ -103,108 +127,118 @@ collage/
 ├── exif.py           EXIF reading and sort keys
 ├── image.py          loading, orientation, fit/cover renderers
 ├── layout.py         canvas/cell geometry helpers
-└── utils.py          file discovery, parse_ratio, parse_color
+└── utils.py          file discovery, parse_ratio, parse_layout, parse_color
 ```
 
 ---
 
 ## Installation
 
-```bash
-git clone https://github.com/yourname/make_collages.git
-cd make_collages
+**Option A — double-click (Mac):**
+Double-click `launch.command`. Everything is handled automatically on first run.
 
+**Option B — terminal:**
+```bash
+make install
+# or manually:
 python3 -m venv env
-source env/bin/activate       # Windows: env\Scripts\activate
-
-pip install -e ".[heic]"      # registers the make-collages command
-```
-
-**Without installing** (run the script directly):
-```bash
-pip install -r requirements.txt
-python make_collages.py --input ./photos --output ./collages
+source env/bin/activate
+pip install -e ".[heic,ui]"
 ```
 
 ---
 
-## Quick start
+## Launching the UI
 
 ```bash
+# Mac: double-click launch.command in Finder
+# or:
+make ui
+# or:
+python app.py
+```
+
+Opens at `http://localhost:7860`. The UI has three option panels:
+
+| Panel | Controls |
+|---|---|
+| Grid & size | Layout (cols×rows), aspect ratio, canvas width |
+| Style | Fill mode, gap, border, background colour |
+| Sorting & extras | Sort by EXIF/name, recursive scan, include leftovers |
+
+---
+
+## CLI usage
+
+For scripting or automation, use the `make-collages` command directly:
+
+```bash
+# Basic
 make-collages --input ./photos --output ./collages
+
+# Custom grid and ratio
+make-collages --input ./photos --output ./collages --layout 3x2 --ratio 16:9
+
+# Cover mode, dark background
+make-collages --input ./photos --output ./collages --fill-mode cover --bg-color 1a1a1a
 ```
 
-Produces portrait `8.9:13.4` collages at 4800 px wide, flush images, white background.
+### All CLI options
 
----
-
-## All options
-
-```
-make-collages --input DIR --output DIR [options]
-```
-
-### Input / output
+#### Input / output
 
 | Flag | Description |
 |---|---|
 | `--input` / `-i` | Source folder *(required)* |
 | `--output` / `-o` | Output folder for JPEG collages *(required)* |
 
-### Size
+#### Grid
+
+| Flag | Default | Description |
+|---|---|---|
+| `--layout COLSxROWS` | `2x2` | Grid size: `2x2` = 4 per collage, `3x2` = 6, `1x3` = 3, etc. |
+
+#### Size
 
 Use `--ratio` + `--pixels-wide` **or** `--cell-width` + `--cell-height` — not both.
 
 | Flag | Default | Description |
 |---|---|---|
-| `--ratio W:H` | `8.9:13.4` | Output aspect ratio. Decimals accepted: `16:9`, `4:3`, `8.9:13.4` |
-| `--pixels-wide PX` | `4800` | Total canvas width in pixels. Height derived from ratio |
+| `--ratio W:H` | `8.9:13.4` | Output aspect ratio. Decimals accepted |
+| `--pixels-wide PX` | `4800` | Total canvas width. Height derived from ratio |
 | `--cell-width PX` | — | Override: each cell's width in pixels |
 | `--cell-height PX` | — | Override: each cell's height in pixels |
 
-### Layout
+#### Layout
 
 | Flag | Default | Description |
 |---|---|---|
 | `--gap PX` | `0` | Space between columns and between rows |
 | `--border PX` | `0` | Outer border around the collage |
 | `--fill-mode` | `fit` | `fit` — full image, bars on one side. `cover` — crop edges, no bars |
-| `--bg-color COLOR` | `ffffff` | Hex (`1a1a1a`) or `r,g,b` (`26,26,26`) |
+| `--bg-color COLOR` | `ffffff` | Hex (`1a1a1a`) or `r,g,b` |
 
-### Sorting & scanning
+#### Sorting & scanning
 
 | Flag | Default | Description |
 |---|---|---|
 | `--sort` | `exif` | `exif` — EXIF capture time → filename. `name` — filename only |
 | `--recursive` / `-r` | off | Scan subfolders recursively |
-| `--include-leftovers` | off | Create a final collage even if fewer than 4 images remain |
+| `--include-leftovers` | off | Create a final collage even if fewer than one full batch remains |
 
 ---
 
-## Examples
+## How sorting works
 
-**Default — portrait, white background, flush:**
-```bash
-make-collages --input ./photos --output ./collages
-```
+1. **`--sort exif` (default)** — reads `DateTimeOriginal` from EXIF metadata. Falls back to `DateTimeDigitized`, then `DateTime`. Images without EXIF dates go last, sorted by filename. iPhone photos always embed `DateTimeOriginal`, so this produces a reliable chronological order.
+2. **`--sort name`** — case-insensitive filename sort.
 
-**4K landscape, cover mode:**
-```bash
-make-collages --input ./photos --output ./collages \
-  --ratio 16:9 --pixels-wide 3840 --fill-mode cover
-```
+## How image orientation works
 
-**Square with gap and dark background:**
-```bash
-make-collages --input ./photos --output ./collages \
-  --ratio 1:1 --gap 8 --border 16 --bg-color 1a1a1a
-```
+Two layers of correction are applied before placing each image:
 
-**Recursive scan, include leftovers:**
-```bash
-make-collages --input ./photos --output ./collages \
-  --recursive --include-leftovers
-```
+1. **EXIF orientation tag** — `ImageOps.exif_transpose` rotates pixel data to match the tag (e.g. portrait shots stored as landscape on iPhone).
+2. **Cell orientation matching** — if the image and cell orientations still differ, the image is rotated 90° to best fill the cell and minimise whitespace.
 
 ---
 
@@ -216,11 +250,12 @@ from collage.core import CollageConfig, run
 from collage.layout import cell_size_from_canvas, canvas_size_from_ratio
 
 canvas_w, canvas_h = canvas_size_from_ratio(8.9, 13.4, pixels_wide=4800)
-cell_w, cell_h     = cell_size_from_canvas(canvas_w, canvas_h, gap=0, border=0)
+cell_w, cell_h     = cell_size_from_canvas(canvas_w, canvas_h, gap=0, border=0, cols=2, rows=2)
 
 config = CollageConfig(
     input_dir=Path("./photos"),
     output_dir=Path("./collages"),
+    cols=2, rows=2,
     canvas_w=canvas_w, canvas_h=canvas_h,
     cell_w=cell_w,     cell_h=cell_h,
     gap=0, border=0,
@@ -231,7 +266,7 @@ config = CollageConfig(
     include_leftovers=False,
 )
 
-run(config)
+output_paths = run(config)
 ```
 
 ---

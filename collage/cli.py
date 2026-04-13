@@ -7,17 +7,16 @@ from pathlib import Path
 
 from .core import CollageConfig, run
 from .layout import cell_size_from_canvas, canvas_size_from_cells, canvas_size_from_ratio
-from .utils import parse_color, parse_ratio
+from .utils import parse_color, parse_layout, parse_ratio
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="make-collages",
         description=(
-            "Generate 2×2 photo collages from a folder of images.\n\n"
-            "Size: set --ratio (e.g. 9:16 or 8.9:13.4) and --pixels-wide.\n"
-            "Height is derived automatically. Or use --cell-width/--cell-height\n"
-            "to control each cell directly.\n\n"
+            "Generate photo collages from a folder of images.\n\n"
+            "Grid: use --layout to choose the grid (e.g. 2x2, 3x2, 1x3).\n"
+            "Size: set --ratio and --pixels-wide, or --cell-width/--cell-height.\n"
             "Images are flush by default (--gap 0 --border 0)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -28,6 +27,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Source folder containing photos.")
     io.add_argument("--output", "-o", required=True, metavar="DIR",
                     help="Destination folder for collage JPEGs.")
+
+    grid = parser.add_argument_group("grid")
+    grid.add_argument(
+        "--layout", type=parse_layout, default="2x2", metavar="COLSxROWS",
+        help="Grid dimensions: columns × rows. E.g. 2x2, 3x2, 1x3. [default: 2x2]",
+    )
 
     size = parser.add_argument_group(
         "size  (use --ratio/--pixels-wide  OR  --cell-width/--cell-height, not both)"
@@ -70,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     misc.add_argument("--recursive", "-r", action="store_true",
                       help="Scan subfolders recursively.")
     misc.add_argument("--include-leftovers", action="store_true",
-                      help="Create a final collage even if fewer than 4 images remain.")
+                      help="Create a final collage even if fewer than layout slots remain.")
 
     return parser
 
@@ -86,24 +91,30 @@ def main() -> None:
     if not input_dir.is_dir():
         parser.error(f"Input path is not a directory: {input_dir}")
 
+    cols, rows = args.layout
+
     # ── Resolve canvas and cell size ──────────────────────────────────────────
     using_cell_override = args.cell_width is not None or args.cell_height is not None
 
     if using_cell_override:
         cell_w   = args.cell_width  or args.cell_height
         cell_h   = args.cell_height or args.cell_width
-        canvas_w, canvas_h = canvas_size_from_cells(cell_w, cell_h, args.gap, args.border)
+        canvas_w, canvas_h = canvas_size_from_cells(cell_w, cell_h, args.gap, args.border,
+                                                    cols, rows)
     else:
         ratio_w, ratio_h   = args.ratio
         canvas_w, canvas_h = canvas_size_from_ratio(ratio_w, ratio_h, args.pixels_wide)
         try:
-            cell_w, cell_h = cell_size_from_canvas(canvas_w, canvas_h, args.gap, args.border)
+            cell_w, cell_h = cell_size_from_canvas(canvas_w, canvas_h, args.gap, args.border,
+                                                   cols, rows)
         except ValueError as exc:
             parser.error(str(exc))
 
     config = CollageConfig(
         input_dir=input_dir,
         output_dir=output_dir,
+        cols=cols,
+        rows=rows,
         canvas_w=canvas_w,
         canvas_h=canvas_h,
         cell_w=cell_w,

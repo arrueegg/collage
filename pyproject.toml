@@ -14,10 +14,12 @@ dependencies = [
 
 [project.optional-dependencies]
 heic = ["pillow-heif>=0.13.0"]
-all  = ["make-collages[heic]"]
+ui   = ["gradio>=4.0.0"]
+all  = ["make-collages[heic,ui]"]
 
 [project.scripts]
-make-collages = "collage.cli:main"
+make-collages    = "collage.cli:main"
+make-collages-ui = "app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

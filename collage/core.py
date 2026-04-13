@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -24,29 +24,39 @@ class CollageConfig:
     input_dir: Path
     output_dir: Path
 
+    # Grid layout
+    cols: int = 2
+    rows: int = 2
+
     # Canvas / cell geometry (pixels)
-    canvas_w: int
-    canvas_h: int
-    cell_w: int
-    cell_h: int
-    gap: int
-    border: int
+    canvas_w: int = 4800
+    canvas_h: int = 7227
+    cell_w: int = 2400
+    cell_h: int = 3613
+    gap: int = 0
+    border: int = 0
 
     # Rendering
-    fill_mode: FillMode
-    bg_color: tuple[int, int, int]
+    fill_mode: FillMode = "fit"
+    bg_color: tuple[int, int, int] = field(default_factory=lambda: (255, 255, 255))
 
     # Sorting & scanning
-    sort: str               # "exif" | "name"
-    recursive: bool
-    include_leftovers: bool
+    sort: str = "exif"
+    recursive: bool = False
+    include_leftovers: bool = False
+
+    @property
+    def batch_size(self) -> int:
+        """Number of images per collage."""
+        return self.cols * self.rows
 
 
-def run(config: CollageConfig) -> None:
+def run(config: CollageConfig) -> list[Path]:
     """
     Discover, sort, batch, and render collages according to *config*.
 
-    Prints progress to stdout and writes JPEG files to config.output_dir.
+    Prints progress to stdout, writes JPEG files to config.output_dir,
+    and returns the list of paths that were written.
     """
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -56,9 +66,9 @@ def run(config: CollageConfig) -> None:
 
     if not images:
         print("No supported images found. Exiting.")
-        sys.exit(0)
+        return []
 
-    exts = ", ".join(sorted(SUPPORTED_EXTENSIONS))
+    exts     = ", ".join(sorted(SUPPORTED_EXTENSIONS))
     heic_note = " | HEIC: enabled" if HEIC_SUPPORTED else ""
     print(f"Found {len(images)} image(s). Formats: {exts}{heic_note}")
 
@@ -70,41 +80,45 @@ def run(config: CollageConfig) -> None:
 
     # ── Layout summary ────────────────────────────────────────────────────────
     print(
+        f"Layout: {config.cols}×{config.rows}  |  "
         f"Canvas: {config.canvas_w}×{config.canvas_h}px  |  "
         f"Cell: {config.cell_w}×{config.cell_h}px  |  "
         f"Gap: {config.gap}px  |  Border: {config.border}px  |  "
         f"Fill mode: {config.fill_mode}"
     )
 
-    # ── Batch into groups of 4 ────────────────────────────────────────────────
-    full_batches = len(images) // 4
-    remainder    = len(images) % 4
+    # ── Batch into groups ─────────────────────────────────────────────────────
+    bs           = config.batch_size
+    full_batches = len(images) // bs
+    remainder    = len(images) % bs
 
     if remainder:
         if config.include_leftovers:
             print(f"  {remainder} leftover image(s) → final collage with blank cells.")
         else:
             print(
-                f"  {remainder} image(s) skipped (not enough for a full batch of 4). "
+                f"  {remainder} image(s) skipped (not enough for a full batch of {bs}). "
                 "Use --include-leftovers to include them."
             )
 
-    batches: list[list[Path]] = [images[i * 4: i * 4 + 4] for i in range(full_batches)]
+    batches: list[list[Path]] = [images[i * bs: i * bs + bs] for i in range(full_batches)]
     if remainder and config.include_leftovers:
-        batches.append(images[full_batches * 4:])
+        batches.append(images[full_batches * bs:])
 
     if not batches:
-        print("Not enough images to form even one collage. Exiting.")
-        sys.exit(0)
+        print(f"Not enough images to form even one collage (need {bs}). Exiting.")
+        return []
 
     print(f"\nGenerating {len(batches)} collage(s) → {config.output_dir}\n")
 
     # ── Render ────────────────────────────────────────────────────────────────
-    positions = grid_positions(config.border, config.cell_w, config.cell_h, config.gap)
-    pad_w     = len(str(len(batches)))
+    positions   = grid_positions(config.border, config.cell_w, config.cell_h,
+                                 config.gap, config.cols, config.rows)
+    pad_w       = len(str(len(batches)))
+    output_paths: list[Path] = []
 
     for idx, batch in enumerate(batches, start=1):
-        padded: list[Optional[Path]] = list(batch) + [None] * (4 - len(batch))
+        padded: list[Optional[Path]] = list(batch) + [None] * (bs - len(batch))
         out_path = config.output_dir / f"collage_{idx:03d}.jpg"
 
         print(f"  [{idx:{pad_w}}/{len(batches)}] {out_path.name}")
@@ -124,10 +138,13 @@ def run(config: CollageConfig) -> None:
                     print(f"    WARNING: could not open {path.name}: {exc}", file=sys.stderr)
                     img = Image.new("RGB", (config.cell_w, config.cell_h), (80, 80, 80))
 
-                cell = render_cell(img, config.cell_w, config.cell_h, config.fill_mode, config.bg_color)
+                cell = render_cell(img, config.cell_w, config.cell_h,
+                                   config.fill_mode, config.bg_color)
 
             canvas.paste(cell, (x, y))
 
         canvas.save(out_path, "JPEG", quality=JPEG_QUALITY, optimize=True)
+        output_paths.append(out_path)
 
     print(f"\nDone. {len(batches)} collage(s) saved to: {config.output_dir.resolve()}")
+    return output_paths
