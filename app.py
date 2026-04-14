@@ -368,7 +368,6 @@ def build_ui() -> gr.Blocks:
                 choose_output_btn = gr.Button("Choose output")
             with gr.Column(scale=1, min_width=340, elem_classes=["status-column"]):
                 folder_status = gr.HTML(scan_folder("", False))
-                scan_btn = gr.Button("Rescan")
 
         with gr.Accordion("Manual paths", open=False, elem_id="advanced-paths"):
             gr.Markdown("Paste paths here only if the folder buttons do not find what you need.")
@@ -456,11 +455,6 @@ def build_ui() -> gr.Blocks:
             inputs=output_folder,
             outputs=[output_folder, output_summary],
         ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
-        scan_btn.click(
-            fn=scan_folder,
-            inputs=[input_folder, recursive],
-            outputs=folder_status,
-        )
         recursive.change(
             fn=scan_folder,
             inputs=[input_folder, recursive],
