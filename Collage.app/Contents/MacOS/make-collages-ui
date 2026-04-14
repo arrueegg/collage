@@ -5,53 +5,83 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
 LOG_FILE="$PROJECT_DIR/make-collages-ui.log"
 DEPS_MARKER="env/.deps-installed"
-VENV_SITE_PACKAGES="$PROJECT_DIR/env/lib/python3.12/site-packages"
+
+find_python() {
+    for candidate in python3.12 python3.11 python3.10 python3.9 python3; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            if "$candidate" - <<'PYCODE'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 9) else 1)
+PYCODE
+            then
+                command -v "$candidate"
+                return 0
+            fi
+        fi
+    done
+
+    return 1
+}
 
 cd "$PROJECT_DIR"
 
 {
     echo ""
-    echo "[$(date)] Starting Make Collages UI"
+    echo "[$(date)] Starting Collage"
     if [ ! -r "app.py" ]; then
         echo "app.py is not readable from the Finder-launched app process."
-        echo "macOS may be blocking access to this Documents folder."
+        echo "macOS may be blocking access to this folder."
         exit 1
+    fi
+
+    if [ -f "env/bin/python" ]; then
+        if ! env/bin/python - <<'PYCODE'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 9) else 1)
+PYCODE
+        then
+            echo "Existing virtual environment uses an older Python; recreating it..."
+            rm -rf env
+            rm -f "$DEPS_MARKER"
+        fi
     fi
 
     if [ ! -f "env/bin/python" ]; then
-        echo "Virtual environment is missing. Double-click launch.command once to create it."
-        exit 1
-    fi
-
-    PYTHON_BIN="$(/usr/bin/readlink "env/bin/python3.12" || true)"
-    if [ -z "$PYTHON_BIN" ]; then
-        PYTHON_BIN="$PROJECT_DIR/env/bin/python"
-    fi
-
-    if ! "$PYTHON_BIN" - <<'PY'
-import sys
-raise SystemExit(0 if sys.version_info >= (3, 9) else 1)
-PY
-    then
-        echo "Virtual environment uses an older Python. Double-click launch.command once to rebuild it."
-        exit 1
+        PYTHON_BIN="$(find_python)" || {
+            echo "Python 3.9 or newer is required, but none was found."
+            echo "Install a current Python from https://www.python.org/downloads/ and try again."
+            exit 1
+        }
+        echo "First run: creating virtual environment..."
+        "$PYTHON_BIN" -m venv env
+        rm -f "$DEPS_MARKER"
     fi
 
     if [ ! -f "$DEPS_MARKER" ] || [ "pyproject.toml" -nt "$DEPS_MARKER" ] || [ "requirements.txt" -nt "$DEPS_MARKER" ]; then
-        echo "Dependencies need updating. Double-click launch.command once to update them."
-        exit 1
+        echo "Installing dependencies..."
+        env/bin/python -m pip install --upgrade pip setuptools wheel
+        env/bin/python -m pip install -q -e ".[heic,ui]"
+        touch "$DEPS_MARKER"
+    else
+        echo "Dependencies already installed; skipping check."
     fi
+
+    VENV_SITE_PACKAGES="$(env/bin/python - <<'PYCODE'
+import sysconfig
+print(sysconfig.get_paths()["purelib"])
+PYCODE
+)"
 
     echo "Launching browser UI..."
     export VIRTUAL_ENV="$PROJECT_DIR/env"
     export PATH="$PROJECT_DIR/env/bin:$PATH"
     export PYTHONPATH="$VENV_SITE_PACKAGES${PYTHONPATH:+:$PYTHONPATH}"
     set +e
-    "$PYTHON_BIN" app.py
+    env/bin/python app.py
     status=$?
     set -e
     if [ "$status" -ne 0 ]; then
-        /usr/bin/osascript -e "display dialog \"Make Collages UI could not start. macOS may be blocking Python from reading this Documents folder. Check make-collages-ui.log in the project folder.\" buttons {\"OK\"} default button \"OK\" with title \"Make Collages UI\""
+        /usr/bin/osascript -e 'display dialog "Collage could not start. Check make-collages-ui.log in the project folder." buttons {"OK"} default button "OK" with title "Collage"'
     fi
     exit "$status"
 } >> "$LOG_FILE" 2>&1
