@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import io
 import socket
+import subprocess
 from pathlib import Path
 
 import gradio as gr
@@ -26,6 +27,33 @@ from collage.utils import HEIC_SUPPORTED, SUPPORTED_EXTENSIONS, parse_color, par
 LAYOUT_OPTIONS = ["1x1", "1x2", "2x1", "2x2", "2x3", "3x2", "3x3", "4x2", "2x4", "4x3", "3x4"]
 
 PREVIEW_LIMIT = 12   # max collages shown in the gallery
+
+APP_CSS = """
+.gradio-container { max-width: 1180px !important; margin: 0 auto !important; }
+#app-title { margin: 18px 0 8px; }
+#app-title h1 { font-size: 2.2rem; line-height: 1.05; margin-bottom: 0.25rem; }
+#app-title p { color: #5f6368; font-size: 1rem; margin: 0; }
+.folder-chip {
+    border: 1px solid #d7dde5;
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    min-height: 74px;
+}
+.folder-chip strong { display: block; color: #1f2937; font-size: 1rem; margin-bottom: 4px; }
+.folder-chip span { color: #6b7280; font-size: 0.92rem; }
+.status-pill {
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: #eef6f1;
+    border: 1px solid #cfe7d6;
+    color: #25523a;
+}
+button { border-radius: 8px !important; }
+textarea, input, select { border-radius: 8px !important; }
+#generate-btn { min-height: 48px; }
+#advanced-paths { opacity: 0.92; }
+"""
 
 
 def find_free_port(start: int = 7860, stop: int = 7999) -> int:
@@ -42,14 +70,47 @@ def find_free_port(start: int = 7860, stop: int = 7999) -> int:
 
 # ── UI helpers ────────────────────────────────────────────────────────────────
 
-def _folder_from_directory_pick(selection: str | list[str] | None) -> str:
-    if isinstance(selection, list):
-        selection = selection[0] if selection else None
-    if not selection:
-        return ""
+def _escape_applescript(value: str) -> str:
+    return value.replace('\\', '\\\\').replace('"', '\\"')
 
-    path = Path(selection).expanduser()
-    return str(path if path.is_dir() else path.parent)
+
+def _ask_directory(prompt: str, current_path: str = "") -> str:
+    prompt = _escape_applescript(prompt)
+    script = f'POSIX path of (choose folder with prompt "{prompt}")'
+    current = Path(current_path).expanduser() if current_path else None
+    if current and current.exists():
+        if current.is_file():
+            current = current.parent
+        script = (
+            f'POSIX path of (choose folder with prompt "{prompt}" '
+            f'default location POSIX file "{_escape_applescript(str(current))}")'
+        )
+
+    result = subprocess.run(
+        ["/usr/bin/osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def _folder_chip(path_value: str, empty_title: str, empty_hint: str) -> str:
+    if not path_value:
+        return f'<div class="folder-chip"><strong>{empty_title}</strong><span>{empty_hint}</span></div>'
+
+    path = Path(path_value).expanduser()
+    name = path.name or str(path)
+    parent = path.parent.name or str(path.parent)
+    return f'<div class="folder-chip"><strong>{name}</strong><span>in {parent}</span></div>'
+
+
+def _input_chip(path_value: str) -> str:
+    return _folder_chip(path_value, "No photo folder selected", "Choose the folder with your images.")
+
+
+def _output_chip(path_value: str) -> str:
+    return _folder_chip(path_value, "No output folder selected", "Use the suggestion or choose where to save collages.")
 
 
 def _suggest_output_folder(input_folder: str) -> str:
@@ -62,27 +123,48 @@ def _suggest_output_folder(input_folder: str) -> str:
 
 
 def choose_input_folder(
-    selection: str | list[str] | None,
+    current_input: str,
     current_output: str,
     recursive: bool,
-) -> tuple[str, str, str]:
-    input_folder = _folder_from_directory_pick(selection)
+) -> tuple[str, str, str, str, str]:
+    input_folder = _ask_directory("Choose the folder with your photos", current_input)
+    if not input_folder:
+        return current_input, current_output, _input_chip(current_input), _output_chip(current_output), scan_folder(current_input, recursive)
+
     output_folder = current_output.strip() or _suggest_output_folder(input_folder)
-    status = scan_folder(input_folder, recursive)
-    return input_folder, output_folder, status
+    return input_folder, output_folder, _input_chip(input_folder), _output_chip(output_folder), scan_folder(input_folder, recursive)
 
 
-def choose_output_folder(selection: str | list[str] | None) -> str:
-    return _folder_from_directory_pick(selection)
+def choose_output_folder(current_output: str) -> tuple[str, str]:
+    output_folder = _ask_directory("Choose where to save collages", current_output)
+    if not output_folder:
+        return current_output, _output_chip(current_output)
+    return output_folder, _output_chip(output_folder)
+
+
+def suggest_output_folder(input_folder: str) -> tuple[str, str]:
+    output_folder = _suggest_output_folder(input_folder)
+    return output_folder, _output_chip(output_folder)
+
+
+def update_input_path(input_folder: str, current_output: str, recursive: bool) -> tuple[str, str, str, str, str]:
+    input_folder = input_folder.strip()
+    output_folder = current_output.strip() or _suggest_output_folder(input_folder)
+    return input_folder, output_folder, _input_chip(input_folder), _output_chip(output_folder), scan_folder(input_folder, recursive)
+
+
+def update_output_path(output_folder: str) -> tuple[str, str]:
+    output_folder = output_folder.strip()
+    return output_folder, _output_chip(output_folder)
 
 
 def scan_folder(input_folder: str, recursive: bool) -> str:
     if not input_folder.strip():
-        return "Choose an input folder to scan."
+        return '<div class="status-pill">Choose an input folder to scan.</div>'
 
     input_dir = Path(input_folder).expanduser()
     if not input_dir.is_dir():
-        return f"'{input_folder}' is not a valid folder."
+        return '<div class="status-pill">Selected folder is not available.</div>'
 
     glob_fn = input_dir.rglob if recursive else input_dir.glob
     images = [
@@ -90,8 +172,8 @@ def scan_folder(input_folder: str, recursive: bool) -> str:
         if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
     ]
 
-    formats = ", ".join(sorted({path.suffix.lower() for path in images})) or "none"
-    return f"{len(images)} supported image(s) found. Formats: {formats}."
+    formats = ", ".join(sorted({path.suffix.lower().lstrip(".").upper() for path in images})) or "none"
+    return f'<div class="status-pill"><strong>{len(images)}</strong> supported image(s) found. Formats: {formats}.</div>'
 
 
 # ── Core generate function ────────────────────────────────────────────────────
@@ -185,115 +267,130 @@ def generate(
 # ── UI definition ─────────────────────────────────────────────────────────────
 
 def build_ui() -> gr.Blocks:
-    heic_note = "HEIC/HEIF supported" if HEIC_SUPPORTED else "HEIC/HEIF not available (install pillow-heif)"
+    heic_note = "HEIC/HEIF ready" if HEIC_SUPPORTED else "JPG and PNG ready"
 
-    with gr.Blocks(title="make_collages") as demo:
+    with gr.Blocks(title="Collage") as demo:
+        input_folder = gr.State("")
+        output_folder = gr.State("")
 
-        gr.Markdown("# make_collages\nGenerate photo collages from a folder of images.")
-        gr.Markdown(f"*{heic_note}*")
+        gr.Markdown(
+            f"# Collage\nTurn photo folders into clean image grids. {heic_note}.",
+            elem_id="app-title",
+        )
 
-        # ── Folders ───────────────────────────────────────────────────────────
         with gr.Row(equal_height=True):
-            with gr.Column(scale=2, min_width=360):
-                input_folder = gr.Textbox(
-                    label="Input folder",
-                    placeholder="/path/to/photos",
-                    scale=3,
-                )
-                input_picker = gr.File(
-                    label="Choose input folder",
-                    file_count="directory",
-                    type="filepath",
-                    height=90,
-                )
-
-            with gr.Column(scale=2, min_width=360):
-                output_folder = gr.Textbox(
-                    label="Output folder",
-                    placeholder="/path/to/collages",
-                    scale=3,
-                )
-                output_picker = gr.File(
-                    label="Choose output folder",
-                    file_count="directory",
-                    type="filepath",
-                    height=90,
-                )
-
-            with gr.Column(scale=1, min_width=260):
-                folder_status = gr.Textbox(label="Input scan", lines=4, interactive=False)
-                scan_btn = gr.Button("Scan input")
-                suggest_output_btn = gr.Button("Suggest output folder")
-
-        # ── Options ───────────────────────────────────────────────────────────
-        with gr.Row():
-            with gr.Column():
-                gr.Markdown("### Grid & size")
-                layout_dd   = gr.Dropdown(LAYOUT_OPTIONS, value="2x2", label="Layout (cols × rows)",
-                                          info="2x2 = 4 photos per collage, 3x2 = 6, etc.")
-                ratio_box   = gr.Textbox(value="8.9:13.4", label="Aspect ratio (W:H)",
-                                         info="e.g. 8.9:13.4, 16:9, 1:1, 9:16")
-                pixels_wide = gr.Slider(minimum=800, maximum=9600, step=100, value=4800,
-                                        label="Canvas width (px)",
-                                        info="Height is derived from the ratio.")
-
-            with gr.Column():
-                gr.Markdown("### Style")
-                fill_mode = gr.Radio(["fit", "cover"], value="fit", label="Fill mode",
-                                     info="fit = full image visible  |  cover = crop to fill cell")
+            with gr.Column(scale=2, min_width=320):
+                input_summary = gr.HTML(_input_chip(""))
+                choose_input_btn = gr.Button("Choose photos", variant="primary")
+            with gr.Column(scale=2, min_width=320):
+                output_summary = gr.HTML(_output_chip(""))
                 with gr.Row():
-                    gap    = gr.Slider(minimum=0, maximum=200, step=2,  value=0,  label="Gap (px)")
-                    border = gr.Slider(minimum=0, maximum=200, step=2,  value=0,  label="Border (px)")
-                bg_color = gr.ColorPicker(value="#ffffff", label="Background color")
+                    choose_output_btn = gr.Button("Choose output")
+                    suggest_output_btn = gr.Button("Use suggestion")
+            with gr.Column(scale=2, min_width=280):
+                folder_status = gr.HTML(scan_folder("", False))
+                scan_btn = gr.Button("Scan photos")
 
-            with gr.Column():
-                gr.Markdown("### Sorting & extras")
-                sort_mode          = gr.Radio(["exif", "name"], value="exif", label="Sort by",
-                                              info="exif = chronological  |  name = filename")
-                recursive          = gr.Checkbox(value=False, label="Scan subfolders recursively")
-                include_leftovers  = gr.Checkbox(value=False,
-                                                 label="Include leftover images (fill blanks)")
+        with gr.Accordion("Manual paths", open=False, elem_id="advanced-paths"):
+            gr.Markdown("Paste paths here only if the folder buttons do not find what you need.")
+            with gr.Row():
+                input_path_box = gr.Textbox(label="Input path", placeholder="/path/to/photos")
+                output_path_box = gr.Textbox(label="Output path", placeholder="/path/to/collages")
 
-        # ── Action ────────────────────────────────────────────────────────────
+        with gr.Tabs():
+            with gr.Tab("Layout"):
+                with gr.Row():
+                    layout_dd = gr.Radio(
+                        LAYOUT_OPTIONS,
+                        value="2x2",
+                        label="Grid",
+                        info="Columns x rows",
+                    )
+                    ratio_box = gr.Dropdown(
+                        ["8.9:13.4", "1:1", "4:5", "9:16", "16:9"],
+                        value="8.9:13.4",
+                        allow_custom_value=True,
+                        label="Shape",
+                    )
+                pixels_wide = gr.Slider(
+                    minimum=800,
+                    maximum=9600,
+                    step=100,
+                    value=4800,
+                    label="Output width",
+                    info="Higher values create larger JPEG files.",
+                )
+
+            with gr.Tab("Style"):
+                fill_mode = gr.Radio(
+                    ["fit", "cover"],
+                    value="fit",
+                    label="Image fill",
+                    info="Fit keeps every image visible. Cover fills each cell and may crop edges.",
+                )
+                with gr.Row():
+                    gap = gr.Slider(minimum=0, maximum=200, step=2, value=0, label="Gap")
+                    border = gr.Slider(minimum=0, maximum=200, step=2, value=0, label="Border")
+                bg_color = gr.ColorPicker(value="#ffffff", label="Background")
+
+            with gr.Tab("Sorting"):
+                sort_mode = gr.Radio(
+                    ["exif", "name"],
+                    value="exif",
+                    label="Order",
+                    info="EXIF uses photo capture time when available.",
+                )
+                recursive = gr.Checkbox(value=False, label="Include subfolders")
+                include_leftovers = gr.Checkbox(value=False, label="Create a final collage with leftover images")
+
+        btn = gr.Button("Generate collages", variant="primary", elem_id="generate-btn")
+
         with gr.Row():
-            btn = gr.Button("Generate collages", variant="primary", scale=1)
-
-        # ── Output ────────────────────────────────────────────────────────────
-        with gr.Row():
-            log_box = gr.Textbox(label="Log", lines=12, interactive=False, scale=2)
             gallery = gr.Gallery(
-                label=f"Preview (first {PREVIEW_LIMIT})",
+                label=f"Preview",
                 columns=3,
                 object_fit="contain",
                 height=620,
                 scale=3,
             )
+            log_box = gr.Textbox(label="Run log", lines=12, interactive=False, scale=2)
 
-        # ── Wire up ───────────────────────────────────────────────────────────
-        input_picker.change(
+        choose_input_btn.click(
             fn=choose_input_folder,
-            inputs=[input_picker, output_folder, recursive],
-            outputs=[input_folder, output_folder, folder_status],
+            inputs=[input_folder, output_folder, recursive],
+            outputs=[input_folder, output_folder, input_summary, output_summary, folder_status],
+        ).then(lambda value: value, inputs=input_folder, outputs=input_path_box).then(
+            lambda value: value, inputs=output_folder, outputs=output_path_box
         )
-        output_picker.change(
+        choose_output_btn.click(
             fn=choose_output_folder,
-            inputs=output_picker,
-            outputs=output_folder,
-        )
+            inputs=output_folder,
+            outputs=[output_folder, output_summary],
+        ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
+        suggest_output_btn.click(
+            fn=suggest_output_folder,
+            inputs=input_folder,
+            outputs=[output_folder, output_summary],
+        ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
         scan_btn.click(
             fn=scan_folder,
             inputs=[input_folder, recursive],
             outputs=folder_status,
         )
-        suggest_output_btn.click(
-            fn=_suggest_output_folder,
-            inputs=input_folder,
-            outputs=output_folder,
-        )
         recursive.change(
             fn=scan_folder,
             inputs=[input_folder, recursive],
             outputs=folder_status,
+        )
+        input_path_box.change(
+            fn=update_input_path,
+            inputs=[input_path_box, output_folder, recursive],
+            outputs=[input_folder, output_folder, input_summary, output_summary, folder_status],
+        ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
+        output_path_box.change(
+            fn=update_output_path,
+            inputs=output_path_box,
+            outputs=[output_folder, output_summary],
         )
         btn.click(
             fn=generate,
@@ -318,6 +415,7 @@ def main() -> None:
         server_name="127.0.0.1",
         server_port=find_free_port(),
         theme=gr.themes.Soft(),
+        css=APP_CSS,
     )
 
 
