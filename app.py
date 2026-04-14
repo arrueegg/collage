@@ -16,6 +16,7 @@ import html
 import io
 import socket
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -146,7 +147,7 @@ def _input_chip(path_value: str) -> str:
 
 
 def _output_chip(path_value: str) -> str:
-    return _folder_chip(path_value, "No output folder selected", "Use the suggestion or choose where to save collages.")
+    return _folder_chip(path_value, "No output folder selected", "Choose where to save collages.")
 
 
 def _suggest_output_folder(input_folder: str) -> str:
@@ -170,14 +171,28 @@ def _output_format(choice: str) -> str:
     return FORMAT_OPTIONS.get(choice, choice).lower()
 
 
-def _preview_images(output_paths: list[Path]) -> list[Image.Image]:
+def _preview_images(output_paths: list[Path], log: io.StringIO) -> list[Image.Image]:
     previews: list[Image.Image] = []
     for output_path in output_paths[:PREVIEW_LIMIT]:
-        image = Image.open(output_path)
-        image.thumbnail((1600, 1600))
-        previews.append(image.copy())
-        image.close()
+        try:
+            image = Image.open(output_path)
+            image.thumbnail((1600, 1600))
+            previews.append(image.copy())
+            image.close()
+        except OSError as exc:
+            print(f"Preview skipped for {output_path.name}: {exc}", file=log)
     return previews
+
+
+def _verify_output_folder(output_dir: Path) -> str | None:
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(prefix=".collage-write-test-", dir=output_dir, delete=False) as handle:
+            test_path = Path(handle.name)
+        test_path.unlink(missing_ok=True)
+    except OSError as exc:
+        return f"Cannot write to output folder: {exc}"
+    return None
 
 
 def choose_input_folder(
@@ -189,7 +204,7 @@ def choose_input_folder(
     if not input_folder:
         return current_input, current_output, _input_chip(current_input), _output_chip(current_output), scan_folder(current_input, recursive)
 
-    output_folder = current_output.strip() or _suggest_output_folder(input_folder)
+    output_folder = current_output.strip()
     return input_folder, output_folder, _input_chip(input_folder), _output_chip(output_folder), scan_folder(input_folder, recursive)
 
 
@@ -202,7 +217,7 @@ def choose_output_folder(current_output: str) -> tuple[str, str]:
 
 def update_input_path(input_folder: str, current_output: str, recursive: bool) -> tuple[str, str, str, str, str]:
     input_folder = input_folder.strip()
-    output_folder = current_output.strip() or _suggest_output_folder(input_folder)
+    output_folder = current_output.strip()
     return input_folder, output_folder, _input_chip(input_folder), _output_chip(output_folder), scan_folder(input_folder, recursive)
 
 
@@ -260,7 +275,10 @@ def generate(
 
         output_dir = Path(output_folder.strip()) if output_folder.strip() else None
         if not output_dir:
-            return "Error: please specify an output folder.", []
+            return "Error: please choose an output folder.", []
+        output_error = _verify_output_folder(output_dir)
+        if output_error:
+            return f"Error: {output_error}", []
 
         try:
             cols, rows = parse_layout(layout_str)
@@ -311,7 +329,7 @@ def generate(
         return f"Unexpected error: {exc}", []
 
     log_text    = log.getvalue()
-    preview_images = _preview_images(output_paths)
+    preview_images = _preview_images(output_paths, log)
 
     if len(output_paths) > PREVIEW_LIMIT:
         log_text += f"\n(Showing first {PREVIEW_LIMIT} of {len(output_paths)} collages in preview.)"
