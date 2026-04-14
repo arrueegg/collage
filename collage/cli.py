@@ -66,6 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--bg-color", type=parse_color, default="ffffff", metavar="COLOR",
         help="Background color for bars/gap/border. Hex (ffffff) or r,g,b. [default: ffffff]",
     )
+    layout.add_argument(
+        "--format", choices=["jpeg", "png", "webp"], default="jpeg",
+        help="Output image format. [default: jpeg]",
+    )
 
     misc = parser.add_argument_group("sorting & scanning")
     misc.add_argument(
@@ -123,6 +127,7 @@ def main() -> None:
         border=args.border,
         fill_mode=args.fill_mode,
         bg_color=args.bg_color,
+        output_format=args.format,
         sort=args.sort,
         recursive=args.recursive,
         include_leftovers=args.include_leftovers,

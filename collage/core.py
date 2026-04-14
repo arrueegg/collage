@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from PIL import Image
 
@@ -15,6 +15,8 @@ from .layout import grid_positions
 from .utils import collect_images, SUPPORTED_EXTENSIONS, HEIC_SUPPORTED
 
 JPEG_QUALITY = 95
+OutputFormat = Literal["jpeg", "png", "webp"]
+OUTPUT_EXTENSIONS: dict[OutputFormat, str] = {"jpeg": "jpg", "png": "png", "webp": "webp"}
 
 
 @dataclass
@@ -39,6 +41,7 @@ class CollageConfig:
     # Rendering
     fill_mode: FillMode = "fit"
     bg_color: tuple[int, int, int] = field(default_factory=lambda: (255, 255, 255))
+    output_format: OutputFormat = "jpeg"
 
     # Sorting & scanning
     sort: str = "exif"
@@ -84,7 +87,7 @@ def run(config: CollageConfig) -> list[Path]:
         f"Canvas: {config.canvas_w}×{config.canvas_h}px  |  "
         f"Cell: {config.cell_w}×{config.cell_h}px  |  "
         f"Gap: {config.gap}px  |  Border: {config.border}px  |  "
-        f"Fill mode: {config.fill_mode}"
+        f"Fill mode: {config.fill_mode}  |  Format: {config.output_format.upper()}"
     )
 
     # ── Batch into groups ─────────────────────────────────────────────────────
@@ -119,7 +122,8 @@ def run(config: CollageConfig) -> list[Path]:
 
     for idx, batch in enumerate(batches, start=1):
         padded: list[Optional[Path]] = list(batch) + [None] * (bs - len(batch))
-        out_path = config.output_dir / f"collage_{idx:03d}.jpg"
+        ext = OUTPUT_EXTENSIONS[config.output_format]
+        out_path = config.output_dir / f"collage_{idx:03d}.{ext}"
 
         print(f"  [{idx:{pad_w}}/{len(batches)}] {out_path.name}")
         for p in batch:
@@ -143,7 +147,12 @@ def run(config: CollageConfig) -> list[Path]:
 
             canvas.paste(cell, (x, y))
 
-        canvas.save(out_path, "JPEG", quality=JPEG_QUALITY, optimize=True)
+        if config.output_format == "png":
+            canvas.save(out_path, "PNG", optimize=True)
+        elif config.output_format == "webp":
+            canvas.save(out_path, "WEBP", quality=JPEG_QUALITY, method=6)
+        else:
+            canvas.save(out_path, "JPEG", quality=JPEG_QUALITY, optimize=True)
         output_paths.append(out_path)
 
     print(f"\nDone. {len(batches)} collage(s) saved to: {config.output_dir.resolve()}")

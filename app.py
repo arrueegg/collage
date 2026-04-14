@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import gradio as gr
+from PIL import Image
 
 from collage.core import CollageConfig, run
 from collage.layout import cell_size_from_canvas, canvas_size_from_ratio
@@ -29,6 +30,15 @@ from collage.utils import HEIC_SUPPORTED, SUPPORTED_EXTENSIONS, parse_color, par
 LAYOUT_OPTIONS = ["1x1", "1x2", "2x1", "2x2", "2x3", "3x2", "3x3", "4x2", "2x4", "4x3", "3x4"]
 
 PREVIEW_LIMIT = 12   # max collages shown in the gallery
+RATIO_OPTIONS = {
+    "Tall photo - 8.9:13.4": "8.9:13.4",
+    "Portrait - 4:5": "4:5",
+    "Story - 9:16": "9:16",
+    "Square - 1:1": "1:1",
+    "Landscape - 16:9": "16:9",
+    "Classic - 4:3": "4:3",
+}
+FORMAT_OPTIONS = {"JPEG": "jpeg", "PNG": "png", "WebP": "webp"}
 BG_OPTIONS = {
     "White": "ffffff",
     "Soft gray": "f3f4f6",
@@ -152,6 +162,24 @@ def _background_hex(choice: str) -> str:
     return BG_OPTIONS.get(choice, choice).lstrip("#")
 
 
+def _ratio_value(choice: str) -> str:
+    return RATIO_OPTIONS.get(choice, choice)
+
+
+def _output_format(choice: str) -> str:
+    return FORMAT_OPTIONS.get(choice, choice).lower()
+
+
+def _preview_images(output_paths: list[Path]) -> list[Image.Image]:
+    previews: list[Image.Image] = []
+    for output_path in output_paths[:PREVIEW_LIMIT]:
+        image = Image.open(output_path)
+        image.thumbnail((1600, 1600))
+        previews.append(image.copy())
+        image.close()
+    return previews
+
+
 def choose_input_folder(
     current_input: str,
     current_output: str,
@@ -207,8 +235,9 @@ def generate(
     input_folder: str,
     output_folder: str,
     layout_str: str,
-    ratio_str: str,
+    ratio_choice: str,
     pixels_wide: int,
+    output_format_choice: str,
     fill_mode: str,
     gap: int,
     border: int,
@@ -216,7 +245,7 @@ def generate(
     sort_mode: str,
     recursive: bool,
     include_leftovers: bool,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[Image.Image]]:
     """
     Run the collage generator and return (log_text, list_of_image_paths).
     Called by the Gradio interface when the user clicks Generate.
@@ -239,7 +268,7 @@ def generate(
             return f"Error: {exc}", []
 
         try:
-            ratio_w, ratio_h = parse_ratio(ratio_str)
+            ratio_w, ratio_h = parse_ratio(_ratio_value(ratio_choice))
         except Exception as exc:
             return f"Error: {exc}", []
 
@@ -268,6 +297,7 @@ def generate(
             border=border,
             fill_mode=fill_mode,
             bg_color=bg_color,
+            output_format=_output_format(output_format_choice),
             sort=sort_mode,
             recursive=recursive,
             include_leftovers=include_leftovers,
@@ -281,12 +311,12 @@ def generate(
         return f"Unexpected error: {exc}", []
 
     log_text    = log.getvalue()
-    image_paths = [str(p) for p in output_paths[:PREVIEW_LIMIT]]
+    preview_images = _preview_images(output_paths)
 
     if len(output_paths) > PREVIEW_LIMIT:
         log_text += f"\n(Showing first {PREVIEW_LIMIT} of {len(output_paths)} collages in preview.)"
 
-    return log_text, image_paths
+    return log_text, preview_images
 
 
 # ── UI definition ─────────────────────────────────────────────────────────────
@@ -330,10 +360,15 @@ def build_ui() -> gr.Blocks:
                         info="Columns x rows",
                     )
                     ratio_box = gr.Dropdown(
-                        ["8.9:13.4", "1:1", "4:5", "9:16", "16:9"],
-                        value="8.9:13.4",
+                        list(RATIO_OPTIONS),
+                        value="Tall photo - 8.9:13.4",
                         allow_custom_value=True,
-                        label="Shape",
+                        label="Ratio",
+                    )
+                    output_format = gr.Radio(
+                        list(FORMAT_OPTIONS),
+                        value="JPEG",
+                        label="Format",
                     )
                 pixels_wide = gr.Slider(
                     minimum=800,
@@ -419,7 +454,7 @@ def build_ui() -> gr.Blocks:
             fn=generate,
             inputs=[
                 input_folder, output_folder,
-                layout_dd, ratio_box, pixels_wide,
+                layout_dd, ratio_box, pixels_wide, output_format,
                 fill_mode, gap, border, bg_color,
                 sort_mode, recursive, include_leftovers,
             ],
