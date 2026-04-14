@@ -1,0 +1,57 @@
+#!/bin/bash
+
+set -e
+
+PROJECT_DIR="$(cd "$(dirname "$0")/../../.." && pwd)"
+LOG_FILE="$PROJECT_DIR/make-collages-ui.log"
+DEPS_MARKER="env/.deps-installed"
+VENV_SITE_PACKAGES="$PROJECT_DIR/env/lib/python3.12/site-packages"
+
+cd "$PROJECT_DIR"
+
+{
+    echo ""
+    echo "[$(date)] Starting Make Collages UI"
+    if [ ! -r "app.py" ]; then
+        echo "app.py is not readable from the Finder-launched app process."
+        echo "macOS may be blocking access to this Documents folder."
+        exit 1
+    fi
+
+    if [ ! -f "env/bin/python" ]; then
+        echo "Virtual environment is missing. Double-click launch.command once to create it."
+        exit 1
+    fi
+
+    PYTHON_BIN="$(/usr/bin/readlink "env/bin/python3.12" || true)"
+    if [ -z "$PYTHON_BIN" ]; then
+        PYTHON_BIN="$PROJECT_DIR/env/bin/python"
+    fi
+
+    if ! "$PYTHON_BIN" - <<'PY'
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 9) else 1)
+PY
+    then
+        echo "Virtual environment uses an older Python. Double-click launch.command once to rebuild it."
+        exit 1
+    fi
+
+    if [ ! -f "$DEPS_MARKER" ] || [ "pyproject.toml" -nt "$DEPS_MARKER" ] || [ "requirements.txt" -nt "$DEPS_MARKER" ]; then
+        echo "Dependencies need updating. Double-click launch.command once to update them."
+        exit 1
+    fi
+
+    echo "Launching browser UI..."
+    export VIRTUAL_ENV="$PROJECT_DIR/env"
+    export PATH="$PROJECT_DIR/env/bin:$PATH"
+    export PYTHONPATH="$VENV_SITE_PACKAGES${PYTHONPATH:+:$PYTHONPATH}"
+    set +e
+    "$PYTHON_BIN" app.py
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        /usr/bin/osascript -e "display dialog \"Make Collages UI could not start. macOS may be blocking Python from reading this Documents folder. Check make-collages-ui.log in the project folder.\" buttons {\"OK\"} default button \"OK\" with title \"Make Collages UI\""
+    fi
+    exit "$status"
+} >> "$LOG_FILE" 2>&1

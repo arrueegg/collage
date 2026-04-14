@@ -26,3 +26,6 @@ build/
 
 # Gradio cache
 gradio_cached_examples/
+
+# Local app launcher log
+make-collages-ui.log

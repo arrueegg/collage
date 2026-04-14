@@ -13,20 +13,89 @@ from __future__ import annotations
 
 import contextlib
 import io
-import sys
-import tempfile
+import socket
 from pathlib import Path
 
 import gradio as gr
 
 from collage.core import CollageConfig, run
-from collage.layout import cell_size_from_canvas, canvas_size_from_cells, canvas_size_from_ratio
-from collage.utils import parse_layout, parse_ratio, parse_color, HEIC_SUPPORTED
+from collage.layout import cell_size_from_canvas, canvas_size_from_ratio
+from collage.utils import HEIC_SUPPORTED, SUPPORTED_EXTENSIONS, parse_color, parse_layout, parse_ratio
 
 # ── Layout choices shown in the dropdown ─────────────────────────────────────
 LAYOUT_OPTIONS = ["1x1", "1x2", "2x1", "2x2", "2x3", "3x2", "3x3", "4x2", "2x4", "4x3", "3x4"]
 
 PREVIEW_LIMIT = 12   # max collages shown in the gallery
+HOME_DIR = Path.home()
+
+
+def find_free_port(start: int = 7860, stop: int = 7999) -> int:
+    for port in range(start, stop + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise OSError(f"No free local port found in range {start}-{stop}.")
+
+
+# ── UI helpers ────────────────────────────────────────────────────────────────
+
+def _folder_from_selection(selection: str | list[str] | None) -> str:
+    """Return a usable folder path from a FileExplorer selection."""
+    if isinstance(selection, list):
+        selection = selection[0] if selection else None
+    if not selection:
+        return ""
+
+    path = Path(selection).expanduser()
+    if path.is_file():
+        path = path.parent
+    return str(path)
+
+
+def _suggest_output_folder(input_folder: str) -> str:
+    path = Path(input_folder).expanduser()
+    if not input_folder or not path.exists():
+        return ""
+    if path.is_file():
+        path = path.parent
+    return str(path.parent / f"{path.name}_collages")
+
+
+def choose_input_folder(
+    selection: str | list[str] | None,
+    current_output: str,
+    recursive: bool,
+) -> tuple[str, str, str]:
+    input_folder = _folder_from_selection(selection)
+    output_folder = current_output.strip() or _suggest_output_folder(input_folder)
+    status = scan_folder(input_folder, recursive)
+    return input_folder, output_folder, status
+
+
+def choose_output_folder(selection: str | list[str] | None) -> str:
+    return _folder_from_selection(selection)
+
+
+def scan_folder(input_folder: str, recursive: bool) -> str:
+    if not input_folder.strip():
+        return "Choose an input folder to scan."
+
+    input_dir = Path(input_folder).expanduser()
+    if not input_dir.is_dir():
+        return f"'{input_folder}' is not a valid folder."
+
+    glob_fn = input_dir.rglob if recursive else input_dir.glob
+    images = [
+        path for path in glob_fn("*")
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+    ]
+
+    formats = ", ".join(sorted({path.suffix.lower() for path in images})) or "none"
+    return f"{len(images)} supported image(s) found. Formats: {formats}."
 
 
 # ── Core generate function ────────────────────────────────────────────────────
@@ -128,11 +197,43 @@ def build_ui() -> gr.Blocks:
         gr.Markdown(f"*{heic_note}*")
 
         # ── Folders ───────────────────────────────────────────────────────────
-        with gr.Row():
-            input_folder  = gr.Textbox(label="Input folder", placeholder="/path/to/photos",
-                                       scale=3)
-            output_folder = gr.Textbox(label="Output folder", placeholder="/path/to/collages",
-                                       scale=3)
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=2, min_width=360):
+                input_folder = gr.Textbox(
+                    label="Input folder",
+                    placeholder="/path/to/photos",
+                    scale=3,
+                )
+                with gr.Accordion("Browse input folder", open=True):
+                    input_browser = gr.FileExplorer(
+                        glob="**/*",
+                        ignore_glob="*/.*",
+                        file_count="single",
+                        root_dir=HOME_DIR,
+                        label="Home",
+                        height=260,
+                    )
+
+            with gr.Column(scale=2, min_width=360):
+                output_folder = gr.Textbox(
+                    label="Output folder",
+                    placeholder="/path/to/collages",
+                    scale=3,
+                )
+                with gr.Accordion("Browse output folder", open=False):
+                    output_browser = gr.FileExplorer(
+                        glob="**/*",
+                        ignore_glob="*/.*",
+                        file_count="single",
+                        root_dir=HOME_DIR,
+                        label="Home",
+                        height=260,
+                    )
+
+            with gr.Column(scale=1, min_width=260):
+                folder_status = gr.Textbox(label="Input scan", lines=4, interactive=False)
+                scan_btn = gr.Button("Scan input")
+                suggest_output_btn = gr.Button("Suggest output folder")
 
         # ── Options ───────────────────────────────────────────────────────────
         with gr.Row():
@@ -168,11 +269,42 @@ def build_ui() -> gr.Blocks:
             btn = gr.Button("Generate collages", variant="primary", scale=1)
 
         # ── Output ────────────────────────────────────────────────────────────
-        log_box = gr.Textbox(label="Log", lines=10, interactive=False)
-        gallery = gr.Gallery(label=f"Preview (first {PREVIEW_LIMIT})", columns=3,
-                             object_fit="contain", height=600)
+        with gr.Row():
+            log_box = gr.Textbox(label="Log", lines=12, interactive=False, scale=2)
+            gallery = gr.Gallery(
+                label=f"Preview (first {PREVIEW_LIMIT})",
+                columns=3,
+                object_fit="contain",
+                height=620,
+                scale=3,
+            )
 
         # ── Wire up ───────────────────────────────────────────────────────────
+        input_browser.change(
+            fn=choose_input_folder,
+            inputs=[input_browser, output_folder, recursive],
+            outputs=[input_folder, output_folder, folder_status],
+        )
+        output_browser.change(
+            fn=choose_output_folder,
+            inputs=output_browser,
+            outputs=output_folder,
+        )
+        scan_btn.click(
+            fn=scan_folder,
+            inputs=[input_folder, recursive],
+            outputs=folder_status,
+        )
+        suggest_output_btn.click(
+            fn=_suggest_output_folder,
+            inputs=input_folder,
+            outputs=output_folder,
+        )
+        recursive.change(
+            fn=scan_folder,
+            inputs=[input_folder, recursive],
+            outputs=folder_status,
+        )
         btn.click(
             fn=generate,
             inputs=[
@@ -191,7 +323,12 @@ def build_ui() -> gr.Blocks:
 
 def main() -> None:
     demo = build_ui()
-    demo.launch(inbrowser=True, theme=gr.themes.Soft())
+    demo.launch(
+        inbrowser=True,
+        server_name="127.0.0.1",
+        server_port=find_free_port(),
+        theme=gr.themes.Soft(),
+    )
 
 
 if __name__ == "__main__":

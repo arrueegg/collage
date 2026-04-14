@@ -1,7 +1,10 @@
 Pillow>=10.0.0
 
 [all]
-make-collages[heic]
+make-collages[heic,ui]
 
 [heic]
 pillow-heif>=0.13.0
+
+[ui]
+gradio>=4.0.0

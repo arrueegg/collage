@@ -1,2 +1,3 @@
 [console_scripts]
 make-collages = collage.cli:main
+make-collages-ui = app:main
