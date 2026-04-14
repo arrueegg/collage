@@ -125,10 +125,7 @@ def run(config: CollageConfig) -> list[Path]:
         ext = OUTPUT_EXTENSIONS[config.output_format]
         out_path = config.output_dir / f"collage_{idx:03d}.{ext}"
 
-        print(f"  [{idx:{pad_w}}/{len(batches)}] {out_path.name}")
-        for p in batch:
-            rel = p.relative_to(config.input_dir) if p.is_relative_to(config.input_dir) else p.name
-            print(f"         {rel}")
+        print(f"  [{idx:{pad_w}}/{len(batches)}] {out_path.name}  ({len(batch)} image(s))")
 
         canvas = Image.new("RGB", (config.canvas_w, config.canvas_h), config.bg_color)
 

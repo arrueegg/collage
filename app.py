@@ -147,7 +147,7 @@ def _input_chip(path_value: str) -> str:
 
 
 def _output_chip(path_value: str) -> str:
-    return _folder_chip(path_value, "No output folder selected", "Choose where to save collages.")
+    return _folder_chip(path_value, "No output folder selected", "Choose photos to create the default output folder.")
 
 
 def _suggest_output_folder(input_folder: str) -> str:
@@ -204,7 +204,7 @@ def choose_input_folder(
     if not input_folder:
         return current_input, current_output, _input_chip(current_input), _output_chip(current_output), scan_folder(current_input, recursive)
 
-    output_folder = current_output.strip()
+    output_folder = current_output.strip() or _suggest_output_folder(input_folder)
     return input_folder, output_folder, _input_chip(input_folder), _output_chip(output_folder), scan_folder(input_folder, recursive)
 
 
@@ -217,7 +217,7 @@ def choose_output_folder(current_output: str) -> tuple[str, str]:
 
 def update_input_path(input_folder: str, current_output: str, recursive: bool) -> tuple[str, str, str, str, str]:
     input_folder = input_folder.strip()
-    output_folder = current_output.strip()
+    output_folder = current_output.strip() or _suggest_output_folder(input_folder)
     return input_folder, output_folder, _input_chip(input_folder), _output_chip(output_folder), scan_folder(input_folder, recursive)
 
 
