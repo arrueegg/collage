@@ -29,33 +29,40 @@ from collage.utils import HEIC_SUPPORTED, SUPPORTED_EXTENSIONS, parse_color, par
 LAYOUT_OPTIONS = ["1x1", "1x2", "2x1", "2x2", "2x3", "3x2", "3x3", "4x2", "2x4", "4x3", "3x4"]
 
 PREVIEW_LIMIT = 12   # max collages shown in the gallery
+BG_OPTIONS = {
+    "White": "ffffff",
+    "Soft gray": "f3f4f6",
+    "Warm white": "faf7f0",
+    "Charcoal": "1f2937",
+}
 
 APP_CSS = """
-.gradio-container { max-width: 1180px !important; margin: 0 auto !important; }
-#app-title { margin: 18px 0 8px; }
-#app-title h1 { font-size: 2.2rem; line-height: 1.05; margin-bottom: 0.25rem; }
-#app-title p { color: #5f6368; font-size: 1rem; margin: 0; }
+.gradio-container { max-width: 1040px !important; margin: 0 auto !important; }
+#app-title { margin: 14px 0 10px; }
+#app-title h1 { font-size: 2rem; line-height: 1.05; margin-bottom: 0.2rem; }
+#app-title p { color: #626a73; font-size: 0.98rem; margin: 0; }
 .folder-chip {
-    border: 1px solid #d7dde5;
+    border: 1px solid #d9e0e7;
     border-radius: 8px;
-    padding: 14px 16px;
-    background: #f8fafc;
-    min-height: 74px;
+    padding: 12px 14px;
+    background: #fbfcfd;
+    min-height: 68px;
 }
-.folder-chip strong { display: block; color: #1f2937; font-size: 1rem; margin-bottom: 4px; }
-.folder-chip span, .folder-chip a { color: #6b7280; font-size: 0.92rem; }
+.folder-chip strong { display: block; color: #20242a; font-size: 0.98rem; margin-bottom: 3px; }
+.folder-chip span, .folder-chip a { color: #65707c; font-size: 0.9rem; }
 .folder-chip a { text-decoration: none; }
 .folder-chip a:hover { text-decoration: underline; }
 .status-pill {
     border-radius: 8px;
-    padding: 12px 14px;
-    background: #eef6f1;
-    border: 1px solid #cfe7d6;
-    color: #25523a;
+    padding: 10px 12px;
+    background: #f2f7f4;
+    border: 1px solid #d7e6dc;
+    color: #294837;
+    min-height: 48px;
 }
 button { border-radius: 8px !important; }
 textarea, input, select { border-radius: 8px !important; }
-#generate-btn { min-height: 48px; }
+#generate-btn { min-height: 44px; max-width: 260px; }
 #advanced-paths { opacity: 0.92; }
 """
 
@@ -141,6 +148,10 @@ def _suggest_output_folder(input_folder: str) -> str:
     return str(path.parent / f"{path.name}_collages")
 
 
+def _background_hex(choice: str) -> str:
+    return BG_OPTIONS.get(choice, choice).lstrip("#")
+
+
 def choose_input_folder(
     current_input: str,
     current_output: str,
@@ -161,11 +172,6 @@ def choose_output_folder(current_output: str) -> tuple[str, str]:
     return output_folder, _output_chip(output_folder)
 
 
-def suggest_output_folder(input_folder: str) -> tuple[str, str]:
-    output_folder = _suggest_output_folder(input_folder)
-    return output_folder, _output_chip(output_folder)
-
-
 def update_input_path(input_folder: str, current_output: str, recursive: bool) -> tuple[str, str, str, str, str]:
     input_folder = input_folder.strip()
     output_folder = current_output.strip() or _suggest_output_folder(input_folder)
@@ -175,15 +181,6 @@ def update_input_path(input_folder: str, current_output: str, recursive: bool) -
 def update_output_path(output_folder: str) -> tuple[str, str]:
     output_folder = output_folder.strip()
     return output_folder, _output_chip(output_folder)
-
-
-def reveal_in_finder(path_value: str) -> None:
-    if not path_value.strip():
-        return
-    path = Path(path_value).expanduser()
-    target = path if path.exists() else path.parent
-    if target.exists():
-        subprocess.run(["/usr/bin/open", str(target)], check=False)
 
 
 def scan_folder(input_folder: str, recursive: bool) -> str:
@@ -215,7 +212,7 @@ def generate(
     fill_mode: str,
     gap: int,
     border: int,
-    bg_hex: str,
+    bg_choice: str,
     sort_mode: str,
     recursive: bool,
     include_leftovers: bool,
@@ -247,7 +244,7 @@ def generate(
             return f"Error: {exc}", []
 
         try:
-            bg_color = parse_color(bg_hex.lstrip("#"))
+            bg_color = parse_color(_background_hex(bg_choice))
         except Exception as exc:
             return f"Error: {exc}", []
 
@@ -307,20 +304,15 @@ def build_ui() -> gr.Blocks:
         )
 
         with gr.Row(equal_height=True):
-            with gr.Column(scale=2, min_width=320):
+            with gr.Column(scale=3, min_width=320):
                 input_summary = gr.HTML(_input_chip(""))
-                with gr.Row():
-                    choose_input_btn = gr.Button("Choose photos", variant="primary")
-                    reveal_input_btn = gr.Button("Reveal")
-            with gr.Column(scale=2, min_width=320):
+                choose_input_btn = gr.Button("Choose photos", variant="primary")
+            with gr.Column(scale=3, min_width=320):
                 output_summary = gr.HTML(_output_chip(""))
-                with gr.Row():
-                    choose_output_btn = gr.Button("Choose output")
-                    suggest_output_btn = gr.Button("Use suggestion")
-                    reveal_output_btn = gr.Button("Reveal")
-            with gr.Column(scale=2, min_width=280):
+                choose_output_btn = gr.Button("Choose output")
+            with gr.Column(scale=2, min_width=260):
                 folder_status = gr.HTML(scan_folder("", False))
-                scan_btn = gr.Button("Scan photos")
+                scan_btn = gr.Button("Rescan")
 
         with gr.Accordion("Manual paths", open=False, elem_id="advanced-paths"):
             gr.Markdown("Paste paths here only if the folder buttons do not find what you need.")
@@ -362,7 +354,12 @@ def build_ui() -> gr.Blocks:
                 with gr.Row():
                     gap = gr.Slider(minimum=0, maximum=200, step=2, value=0, label="Gap")
                     border = gr.Slider(minimum=0, maximum=200, step=2, value=0, label="Border")
-                bg_color = gr.ColorPicker(value="#ffffff", label="Background")
+                bg_color = gr.Radio(
+                    list(BG_OPTIONS),
+                    value="White",
+                    label="Background",
+                    info="Used for gaps, borders, and empty cells.",
+                )
 
             with gr.Tab("Sorting"):
                 sort_mode = gr.Radio(
@@ -398,21 +395,6 @@ def build_ui() -> gr.Blocks:
             inputs=output_folder,
             outputs=[output_folder, output_summary],
         ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
-        suggest_output_btn.click(
-            fn=suggest_output_folder,
-            inputs=input_folder,
-            outputs=[output_folder, output_summary],
-        ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
-        reveal_input_btn.click(
-            fn=reveal_in_finder,
-            inputs=input_folder,
-            outputs=None,
-        )
-        reveal_output_btn.click(
-            fn=reveal_in_finder,
-            inputs=output_folder,
-            outputs=None,
-        )
         scan_btn.click(
             fn=scan_folder,
             inputs=[input_folder, recursive],
