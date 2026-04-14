@@ -12,10 +12,12 @@ Then open http://localhost:7860 in your browser.
 from __future__ import annotations
 
 import contextlib
+import html
 import io
 import socket
 import subprocess
 from pathlib import Path
+from urllib.parse import quote
 
 import gradio as gr
 
@@ -41,7 +43,9 @@ APP_CSS = """
     min-height: 74px;
 }
 .folder-chip strong { display: block; color: #1f2937; font-size: 1rem; margin-bottom: 4px; }
-.folder-chip span { color: #6b7280; font-size: 0.92rem; }
+.folder-chip span, .folder-chip a { color: #6b7280; font-size: 0.92rem; }
+.folder-chip a { text-decoration: none; }
+.folder-chip a:hover { text-decoration: underline; }
 .status-pill {
     border-radius: 8px;
     padding: 12px 14px;
@@ -95,14 +99,29 @@ def _ask_directory(prompt: str, current_path: str = "") -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def _finder_href(path: Path) -> str:
+    return "file://" + quote(str(path), safe="/:~")
+
+
+def _friendly_path(path: Path) -> str:
+    try:
+        return "~/" + str(path.expanduser().relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
 def _folder_chip(path_value: str, empty_title: str, empty_hint: str) -> str:
     if not path_value:
         return f'<div class="folder-chip"><strong>{empty_title}</strong><span>{empty_hint}</span></div>'
 
     path = Path(path_value).expanduser()
-    name = path.name or str(path)
-    parent = path.parent.name or str(path.parent)
-    return f'<div class="folder-chip"><strong>{name}</strong><span>in {parent}</span></div>'
+    name = html.escape(path.name or str(path))
+    friendly = html.escape(_friendly_path(path))
+    if path.exists():
+        detail = f'<a href="{_finder_href(path)}" target="_blank">Finder: {friendly}</a>'
+    else:
+        detail = f'<span>Will be created at {friendly}</span>'
+    return f'<div class="folder-chip"><strong>{name}</strong>{detail}</div>'
 
 
 def _input_chip(path_value: str) -> str:
@@ -156,6 +175,15 @@ def update_input_path(input_folder: str, current_output: str, recursive: bool) -
 def update_output_path(output_folder: str) -> tuple[str, str]:
     output_folder = output_folder.strip()
     return output_folder, _output_chip(output_folder)
+
+
+def reveal_in_finder(path_value: str) -> None:
+    if not path_value.strip():
+        return
+    path = Path(path_value).expanduser()
+    target = path if path.exists() else path.parent
+    if target.exists():
+        subprocess.run(["/usr/bin/open", str(target)], check=False)
 
 
 def scan_folder(input_folder: str, recursive: bool) -> str:
@@ -281,12 +309,15 @@ def build_ui() -> gr.Blocks:
         with gr.Row(equal_height=True):
             with gr.Column(scale=2, min_width=320):
                 input_summary = gr.HTML(_input_chip(""))
-                choose_input_btn = gr.Button("Choose photos", variant="primary")
+                with gr.Row():
+                    choose_input_btn = gr.Button("Choose photos", variant="primary")
+                    reveal_input_btn = gr.Button("Reveal")
             with gr.Column(scale=2, min_width=320):
                 output_summary = gr.HTML(_output_chip(""))
                 with gr.Row():
                     choose_output_btn = gr.Button("Choose output")
                     suggest_output_btn = gr.Button("Use suggestion")
+                    reveal_output_btn = gr.Button("Reveal")
             with gr.Column(scale=2, min_width=280):
                 folder_status = gr.HTML(scan_folder("", False))
                 scan_btn = gr.Button("Scan photos")
@@ -372,6 +403,16 @@ def build_ui() -> gr.Blocks:
             inputs=input_folder,
             outputs=[output_folder, output_summary],
         ).then(lambda value: value, inputs=output_folder, outputs=output_path_box)
+        reveal_input_btn.click(
+            fn=reveal_in_finder,
+            inputs=input_folder,
+            outputs=None,
+        )
+        reveal_output_btn.click(
+            fn=reveal_in_finder,
+            inputs=output_folder,
+            outputs=None,
+        )
         scan_btn.click(
             fn=scan_folder,
             inputs=[input_folder, recursive],
