@@ -52,17 +52,23 @@ APP_CSS = """
 #app-title { margin: 14px 0 10px; }
 #app-title h1 { font-size: 2rem; line-height: 1.05; margin-bottom: 0.2rem; }
 #app-title p { color: #626a73; font-size: 0.98rem; margin: 0; }
+#folder-row { align-items: stretch; }
+#folder-row > div { min-width: 0 !important; }
 .folder-chip {
     border: 1px solid #d9e0e7;
     border-radius: 8px;
     padding: 12px 14px;
     background: #fbfcfd;
-    min-height: 68px;
+    min-height: 86px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
-.folder-chip strong { display: block; color: #20242a; font-size: 0.98rem; margin-bottom: 3px; }
-.folder-chip span, .folder-chip a { color: #65707c; font-size: 0.9rem; }
-.folder-chip a { text-decoration: none; }
+.folder-chip strong { display: block; color: #20242a; font-size: 0.98rem; margin-bottom: 5px; }
+.folder-chip span, .folder-chip a { color: #65707c; font-size: 0.9rem; line-height: 1.35; }
+.folder-chip a { display: inline-block; max-width: 100%; text-decoration: none; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .folder-chip a:hover { text-decoration: underline; }
+.folder-column, .status-column { min-width: 0 !important; }
+.folder-column button, .status-column button { width: 100%; min-height: 40px !important; }
 .status-pill {
     border-radius: 8px;
     padding: 10px 12px;
@@ -351,14 +357,14 @@ def build_ui() -> gr.Blocks:
             elem_id="app-title",
         )
 
-        with gr.Row(equal_height=True):
-            with gr.Column(scale=3, min_width=320):
+        with gr.Row(equal_height=True, elem_id="folder-row"):
+            with gr.Column(scale=4, min_width=360, elem_classes=["folder-column"]):
                 input_summary = gr.HTML(_input_chip(""))
                 choose_input_btn = gr.Button("Choose photos", variant="primary")
-            with gr.Column(scale=3, min_width=320):
+            with gr.Column(scale=4, min_width=360, elem_classes=["folder-column"]):
                 output_summary = gr.HTML(_output_chip(""))
                 choose_output_btn = gr.Button("Choose output")
-            with gr.Column(scale=2, min_width=260):
+            with gr.Column(scale=3, min_width=300, elem_classes=["status-column"]):
                 folder_status = gr.HTML(scan_folder("", False))
                 scan_btn = gr.Button("Rescan")
 
