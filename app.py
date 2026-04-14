@@ -26,7 +26,6 @@ from collage.utils import HEIC_SUPPORTED, SUPPORTED_EXTENSIONS, parse_color, par
 LAYOUT_OPTIONS = ["1x1", "1x2", "2x1", "2x2", "2x3", "3x2", "3x3", "4x2", "2x4", "4x3", "3x4"]
 
 PREVIEW_LIMIT = 12   # max collages shown in the gallery
-HOME_DIR = Path.home()
 
 
 def find_free_port(start: int = 7860, stop: int = 7999) -> int:
@@ -43,17 +42,14 @@ def find_free_port(start: int = 7860, stop: int = 7999) -> int:
 
 # ── UI helpers ────────────────────────────────────────────────────────────────
 
-def _folder_from_selection(selection: str | list[str] | None) -> str:
-    """Return a usable folder path from a FileExplorer selection."""
+def _folder_from_directory_pick(selection: str | list[str] | None) -> str:
     if isinstance(selection, list):
         selection = selection[0] if selection else None
     if not selection:
         return ""
 
     path = Path(selection).expanduser()
-    if path.is_file():
-        path = path.parent
-    return str(path)
+    return str(path if path.is_dir() else path.parent)
 
 
 def _suggest_output_folder(input_folder: str) -> str:
@@ -70,14 +66,14 @@ def choose_input_folder(
     current_output: str,
     recursive: bool,
 ) -> tuple[str, str, str]:
-    input_folder = _folder_from_selection(selection)
+    input_folder = _folder_from_directory_pick(selection)
     output_folder = current_output.strip() or _suggest_output_folder(input_folder)
     status = scan_folder(input_folder, recursive)
     return input_folder, output_folder, status
 
 
 def choose_output_folder(selection: str | list[str] | None) -> str:
-    return _folder_from_selection(selection)
+    return _folder_from_directory_pick(selection)
 
 
 def scan_folder(input_folder: str, recursive: bool) -> str:
@@ -204,15 +200,12 @@ def build_ui() -> gr.Blocks:
                     placeholder="/path/to/photos",
                     scale=3,
                 )
-                with gr.Accordion("Browse input folder", open=True):
-                    input_browser = gr.FileExplorer(
-                        glob="**/*",
-                        ignore_glob="*/.*",
-                        file_count="single",
-                        root_dir=HOME_DIR,
-                        label="Home",
-                        height=260,
-                    )
+                input_picker = gr.File(
+                    label="Choose input folder",
+                    file_count="directory",
+                    type="filepath",
+                    height=90,
+                )
 
             with gr.Column(scale=2, min_width=360):
                 output_folder = gr.Textbox(
@@ -220,15 +213,12 @@ def build_ui() -> gr.Blocks:
                     placeholder="/path/to/collages",
                     scale=3,
                 )
-                with gr.Accordion("Browse output folder", open=False):
-                    output_browser = gr.FileExplorer(
-                        glob="**/*",
-                        ignore_glob="*/.*",
-                        file_count="single",
-                        root_dir=HOME_DIR,
-                        label="Home",
-                        height=260,
-                    )
+                output_picker = gr.File(
+                    label="Choose output folder",
+                    file_count="directory",
+                    type="filepath",
+                    height=90,
+                )
 
             with gr.Column(scale=1, min_width=260):
                 folder_status = gr.Textbox(label="Input scan", lines=4, interactive=False)
@@ -280,14 +270,14 @@ def build_ui() -> gr.Blocks:
             )
 
         # ── Wire up ───────────────────────────────────────────────────────────
-        input_browser.change(
+        input_picker.change(
             fn=choose_input_folder,
-            inputs=[input_browser, output_folder, recursive],
+            inputs=[input_picker, output_folder, recursive],
             outputs=[input_folder, output_folder, folder_status],
         )
-        output_browser.change(
+        output_picker.change(
             fn=choose_output_folder,
-            inputs=output_browser,
+            inputs=output_picker,
             outputs=output_folder,
         )
         scan_btn.click(
