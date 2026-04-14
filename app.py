@@ -71,11 +71,13 @@ APP_CSS = """
 .folder-column button, .status-column button { width: 100%; min-height: 40px !important; }
 .status-pill {
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     background: #f2f7f4;
     border: 1px solid #d7e6dc;
     color: #294837;
-    min-height: 48px;
+    min-height: 86px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 button { border-radius: 8px !important; }
 textarea, input, select { border-radius: 8px !important; }
@@ -358,13 +360,13 @@ def build_ui() -> gr.Blocks:
         )
 
         with gr.Row(equal_height=True, elem_id="folder-row"):
-            with gr.Column(scale=4, min_width=360, elem_classes=["folder-column"]):
+            with gr.Column(scale=1, min_width=340, elem_classes=["folder-column"]):
                 input_summary = gr.HTML(_input_chip(""))
                 choose_input_btn = gr.Button("Choose photos", variant="primary")
-            with gr.Column(scale=4, min_width=360, elem_classes=["folder-column"]):
+            with gr.Column(scale=1, min_width=340, elem_classes=["folder-column"]):
                 output_summary = gr.HTML(_output_chip(""))
                 choose_output_btn = gr.Button("Choose output")
-            with gr.Column(scale=3, min_width=300, elem_classes=["status-column"]):
+            with gr.Column(scale=1, min_width=340, elem_classes=["status-column"]):
                 folder_status = gr.HTML(scan_folder("", False))
                 scan_btn = gr.Button("Rescan")
 
