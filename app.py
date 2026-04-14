@@ -171,12 +171,20 @@ def _background_hex(choice: str) -> str:
     return BG_OPTIONS.get(choice, choice).lstrip("#")
 
 
-def _ratio_value(choice: str) -> str:
-    return RATIO_OPTIONS.get(choice, choice)
+def _layout_value(choice: str, custom_value: str) -> str:
+    return custom_value.strip() if choice == "Custom" else choice
+
+
+def _ratio_value(choice: str, custom_value: str) -> str:
+    return custom_value.strip() if choice == "Custom" else RATIO_OPTIONS.get(choice, choice)
 
 
 def _output_format(choice: str) -> str:
     return FORMAT_OPTIONS.get(choice, choice).lower()
+
+
+def _show_if_custom(choice: str):
+    return gr.update(visible=choice == "Custom")
 
 
 def _preview_images(output_paths: list[Path], log: io.StringIO) -> list[Image.Image]:
@@ -257,8 +265,10 @@ def scan_folder(input_folder: str, recursive: bool) -> str:
 def generate(
     input_folder: str,
     output_folder: str,
-    layout_str: str,
+    layout_choice: str,
+    custom_layout: str,
     ratio_choice: str,
+    custom_ratio: str,
     pixels_wide: int,
     output_format_choice: str,
     fill_mode: str,
@@ -289,12 +299,12 @@ def generate(
             return f"Error: {output_error}", []
 
         try:
-            cols, rows = parse_layout(layout_str)
+            cols, rows = parse_layout(_layout_value(layout_choice, custom_layout))
         except Exception as exc:
             return f"Error: {exc}", []
 
         try:
-            ratio_w, ratio_h = parse_ratio(_ratio_value(ratio_choice))
+            ratio_w, ratio_h = parse_ratio(_ratio_value(ratio_choice, custom_ratio))
         except Exception as exc:
             return f"Error: {exc}", []
 
@@ -378,22 +388,32 @@ def build_ui() -> gr.Blocks:
         with gr.Tabs():
             with gr.Tab("Layout"):
                 with gr.Row():
-                    layout_dd = gr.Radio(
-                        LAYOUT_OPTIONS,
+                    layout_dd = gr.Dropdown(
+                        LAYOUT_OPTIONS + ["Custom"],
                         value="2x2",
                         label="Grid",
                         info="Columns x rows",
                     )
                     ratio_box = gr.Dropdown(
-                        list(RATIO_OPTIONS),
+                        list(RATIO_OPTIONS) + ["Custom"],
                         value="Tall photo - 8.9:13.4",
-                        allow_custom_value=True,
                         label="Ratio",
                     )
                     output_format = gr.Radio(
                         list(FORMAT_OPTIONS),
                         value="JPEG",
                         label="Format",
+                    )
+                with gr.Row():
+                    custom_layout = gr.Textbox(
+                        label="Custom grid",
+                        placeholder="5x2",
+                        visible=False,
+                    )
+                    custom_ratio = gr.Textbox(
+                        label="Custom ratio",
+                        placeholder="3:2",
+                        visible=False,
                     )
                 pixels_wide = gr.Slider(
                     minimum=800,
@@ -443,6 +463,16 @@ def build_ui() -> gr.Blocks:
             )
             log_box = gr.Textbox(label="Run log", lines=12, interactive=False, scale=2)
 
+        layout_dd.change(
+            fn=_show_if_custom,
+            inputs=layout_dd,
+            outputs=custom_layout,
+        )
+        ratio_box.change(
+            fn=_show_if_custom,
+            inputs=ratio_box,
+            outputs=custom_ratio,
+        )
         choose_input_btn.click(
             fn=choose_input_folder,
             inputs=[input_folder, output_folder, recursive],
@@ -474,7 +504,7 @@ def build_ui() -> gr.Blocks:
             fn=generate,
             inputs=[
                 input_folder, output_folder,
-                layout_dd, ratio_box, pixels_wide, output_format,
+                layout_dd, custom_layout, ratio_box, custom_ratio, pixels_wide, output_format,
                 fill_mode, gap, border, bg_color,
                 sort_mode, recursive, include_leftovers,
             ],
